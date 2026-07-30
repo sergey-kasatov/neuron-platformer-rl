@@ -1,0 +1,7 @@
+pygame>=2.5.2
+gymnasium>=0.29.1
+numpy>=1.26.0
+stable-baselines3>=2.3.0
+torch>=2.2.0
+pandas>=2.2.0
+matplotlib>=3.8.0
