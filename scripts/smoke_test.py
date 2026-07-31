@@ -5,7 +5,8 @@ Exercises the real env end to end: physics, jumping, the reward contract
 portal, falling off, and both observation modes.
 
 Run headless:  SDL_VIDEODRIVER=dummy python scripts/smoke_test.py
-TODO: port into tests/ as pytest cases.
+The same checks live in tests/test_smoke.py as pytest cases; this script
+stays dependency-free for a quick check without pytest.
 """
 from __future__ import annotations
 
