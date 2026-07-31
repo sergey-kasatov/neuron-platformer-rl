@@ -127,6 +127,19 @@ raw rightward movement (progress is now rewarded only beyond max_x), and
 an over-harsh death penalty that taught the agent to freeze at the first
 pit edge instead of jumping.
 
+The whole build history, one panel per training run:
+
+![Training history: seven runs, four fixes](assets/training_history.png)
+
+Y-scales are per-panel on purpose: the reward function changed between
+runs, so episode rewards are not comparable across panels. The only number
+that is comparable is the success rate on the same 30 unseen seeds. The
+interactive version of every curve is in tensorboard:
+
+```bash
+tensorboard --logdir logs/tensorboard
+```
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0
