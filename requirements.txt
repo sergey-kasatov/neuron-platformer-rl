@@ -5,3 +5,4 @@ stable-baselines3>=2.3.0
 torch>=2.2.0
 pandas>=2.2.0
 matplotlib>=3.8.0
+pillow>=10.0.0

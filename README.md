@@ -2,6 +2,12 @@
 
 A procedurally generated 2D platformer environment for Reinforcement Learning and Computer Vision experiments.
 
+![Trained PPO agent on an unseen level, with a live policy monitor](assets/demo_agent_brain.gif)
+
+The agent above plays a level it never saw during training. The panel shows,
+in real time, the 19 input features, the actor's hidden activations, the
+action distribution and the value estimate behind every decision.
+
 ## Project Goals
 
 - Build a custom Gymnasium-compatible platformer environment.
@@ -28,6 +34,8 @@ A procedurally generated 2D platformer environment for Reinforcement Learning an
 - Dual renderer: Kenney sprite art for humans and replays, a clean
   flat-colour frame for the agent's 84x84 observation
 - Debug overlay with enemies, portal, reward, seed, and metrics
+- Live policy monitor: input features, hidden activations, action
+  probabilities and V(s) rendered beside the game (roadmap v1.5)
 
 ## Install
 
@@ -91,6 +99,15 @@ python -m neuron_platformer_rl.agents.play_agent
 ```bash
 python -m neuron_platformer_rl.evaluation.evaluate_agent
 ```
+
+## Record a Demo GIF
+
+```bash
+python scripts/record_agent_gif.py --seed 10000
+```
+
+Runs the trained model on the given seed and writes
+`assets/demo_agent_brain.gif` with the policy monitor panel attached.
 
 ## Training Results (v1 state model)
 
