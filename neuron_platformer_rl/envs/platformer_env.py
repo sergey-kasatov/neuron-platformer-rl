@@ -181,9 +181,7 @@ class NeuronPlatformerEnv(gym.Env):
         # The agent trains on a deliberately clean frame (flat colours, no
         # parallax or animation): visual noise slows pixel-based RL without
         # adding information. The pretty Kenney frame stays for humans/GIFs.
-        frame = self._render_clean()
-        small = pygame.transform.smoothscale(pygame.surfarray.make_surface(frame.swapaxes(0,1)), (84,84))
-        return pygame.surfarray.array3d(small).swapaxes(0,1).astype(np.uint8)
+        return self._render_clean()
 
     def _info(self, action=None, reward=0.0):
         return dict(seed=self.level.seed, difficulty=self.level.difficulty, action=ACTIONS.get(action,"RESET"),
@@ -269,29 +267,43 @@ class NeuronPlatformerEnv(gym.Env):
 
     def _render_clean(self):
         """Observation renderer: flat colours, no parallax, no animation.
-        One colour per entity class keeps the 84x84 CNN input unambiguous."""
+        One colour per entity class keeps the 84x84 CNN input unambiguous.
+        Drawn directly at 84x84: the first version drew the full 960x540
+        frame and smoothscaled it down, capping the env at ~130 steps/s.
+        Both edges of every rect are mapped to obs space independently
+        (width = right - left), so gap widths stay pixel-accurate and
+        standing entities keep exact contact with platform tops."""
         if self._clean is None:
             pygame.init()
-            self._clean = pygame.Surface((self.width, self.height))
+            self._clean = pygame.Surface((84, 84))
         surf = self._clean
+        sx, sy = 84 / self.width, 84 / self.height
         cam = max(0, min(self.player.x - 240, self.level.width - self.width))
+
+        def rect(colour, x0, y0, x1, y1):
+            rx, ry = round((x0 - cam) * sx), round(y0 * sy)
+            rw = max(1, round((x1 - cam) * sx) - rx)
+            rh = max(1, round(y1 * sy) - ry)
+            pygame.draw.rect(surf, colour, (rx, ry, rw, rh))
+
         surf.fill((94, 174, 235))
         for p in self.level.platforms:
             x = p.x - cam
             if -p.w < x < self.width:
-                h = self.height - p.y if p.y >= 500 else p.h
-                pygame.draw.rect(surf, (150, 92, 42), (x, p.y, p.w, h))
-                pygame.draw.rect(surf, (80, 180, 70), (x, p.y, p.w, 10))
+                bottom = self.height if p.y >= 500 else p.y + p.h
+                rect((150, 92, 42), p.x, p.y, p.x + p.w, bottom)
+                rect((80, 180, 70), p.x, p.y, p.x + p.w, p.y + 10)
         for c in self.level.chips:
             if not c.collected:
-                pygame.draw.circle(surf, (255, 220, 60), (int(c.x - cam), int(c.y)), c.r)
+                rect((255, 220, 60), c.x - c.r, c.y - c.r, c.x + c.r, c.y + c.r)
         for e in self.level.enemies:
             if e.alive:
-                pygame.draw.rect(surf, (205, 55, 65), (int(e.x) - cam, e.y, e.w, e.h))
+                rect((205, 55, 65), e.x, e.y, e.x + e.w, e.y + e.h)
         prt = self.level.portal
-        pygame.draw.rect(surf, (25, 210, 255), (prt.x - cam, prt.y, prt.w, prt.h))
-        pygame.draw.rect(surf, (28, 60, 205), (self.player.x - cam, self.player.y, self.player.w, self.player.h))
-        return pygame.surfarray.array3d(surf).swapaxes(0, 1)
+        rect((25, 210, 255), prt.x, prt.y, prt.x + prt.w, prt.y + prt.h)
+        rect((28, 60, 205), self.player.x, self.player.y,
+             self.player.x + self.player.w, self.player.y + self.player.h)
+        return pygame.surfarray.array3d(surf).swapaxes(0, 1).astype(np.uint8)
 
     def _draw_debug(self, surf):
         font = pygame.font.SysFont("Arial", 16)
