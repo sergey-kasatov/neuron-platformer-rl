@@ -184,8 +184,10 @@ class NeuronPlatformerEnv(gym.Env):
         return self._render_clean()
 
     def _info(self, action=None, reward=0.0):
+        # is_success duplicates success under the exact key SB3's EvalCallback
+        # reads, so evaluations log a success rate, not just mean reward.
         return dict(seed=self.level.seed, difficulty=self.level.difficulty, action=ACTIONS.get(action,"RESET"),
-                    reward=reward, episode_reward=self.episode_reward, success=self.success,
+                    reward=reward, episode_reward=self.episode_reward, success=self.success, is_success=self.success,
                     chips_collected=self.chips_collected, enemy_kills=self.enemy_kills,
                     deaths=self.deaths, distance_to_goal=max(0, self.level.portal.x-self.player.x), x=self.player.x)
 
