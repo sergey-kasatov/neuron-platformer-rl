@@ -92,6 +92,24 @@ python -m neuron_platformer_rl.agents.play_agent
 python -m neuron_platformer_rl.evaluation.evaluate_agent
 ```
 
+## Training Results (v1 state model)
+
+PPO (SB3), 2M steps across 8 parallel envs, CPU, about 30 minutes.
+Evaluated on 30 procedurally generated levels the agent never saw:
+
+| Metric | Value |
+|--------|-------|
+| Success rate (reached the flag) | 50% |
+| Average distance | 2434 px |
+| Average coins | 9.7 |
+
+Getting here required fixing four classic RL failure modes, all documented
+in code comments: pit-blind observations (terrain features added to the
+state vector), entropy collapse (ent_coef), a reward farm from paying for
+raw rightward movement (progress is now rewarded only beyond max_x), and
+an over-harsh death penalty that taught the agent to freeze at the first
+pit edge instead of jumping.
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0

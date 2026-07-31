@@ -24,7 +24,7 @@ class NeuronPlatformerEnv(gym.Env):
         self.generator = LevelGenerator(self.width, self.height)
         self.action_space = spaces.Discrete(6)
         if observation_mode == "state":
-            self.observation_space = spaces.Box(-1.0, 1.0, shape=(16,), dtype=np.float32)
+            self.observation_space = spaces.Box(-1.0, 1.0, shape=(19,), dtype=np.float32)
         else:
             self.observation_space = spaces.Box(0, 255, shape=(84, 84, 3), dtype=np.uint8)
         self.screen = None
@@ -38,6 +38,14 @@ class NeuronPlatformerEnv(gym.Env):
         super().reset(seed=seed)
         lvl_seed = self.fixed_seed if self.fixed_seed is not None else seed
         self.level: Level = self.generator.generate(lvl_seed, self.difficulty)
+        # Main forward path (bonus ledges that overlap a run are excluded):
+        # used by the terrain features in the state observation.
+        chain = []
+        for p in sorted(self.level.platforms, key=lambda q: q.x):
+            if chain and p.x < chain[-1].x + chain[-1].w:
+                continue
+            chain.append(p)
+        self._chain = chain
         self.player = pygame.Rect(self.level.spawn_x, self.level.spawn_y, 32, 44)
         self.vx = 0.0; self.vy = 0.0; self.on_ground = False
         self.camera_x = 0
@@ -47,7 +55,6 @@ class NeuronPlatformerEnv(gym.Env):
 
     def step(self, action: int):
         self.steps += 1
-        old_x = self.player.x
         reward = -0.01
         move = 0
         jump = False
@@ -67,10 +74,12 @@ class NeuronPlatformerEnv(gym.Env):
         self._collide_y()
         self._update_enemies()
 
-        progress = max(0, self.player.x - old_x)
-        reward += progress * 0.035
+        # Reward only NEW forward progress (beyond max_x). Paying for raw
+        # rightward movement let PPO farm reward by pacing back and forth on
+        # the spawn platform: 100 average reward at x=400 with 0% success.
+        # max_x is monotonic, so this term cannot be harvested twice.
         if self.player.x > self.max_x:
-            reward += (self.player.x - self.max_x) * 0.015
+            reward += (self.player.x - self.max_x) * 0.05
             self.max_x = self.player.x
 
         for chip in self.level.chips:
@@ -91,7 +100,12 @@ class NeuronPlatformerEnv(gym.Env):
                     self.vy = -7.5
                     reward += 5.0
                 else:
-                    reward -= 50.0
+                    # Death penalty is mild on purpose. At -50 the safest
+                    # policy PPO could find was to stop at the first pit edge
+                    # and wait out the episode (0% success, x stuck at the
+                    # spawn platform). Dying while trying must stay cheaper
+                    # than never trying.
+                    reward -= 10.0
                     terminated = True
                     self.deaths += 1
 
@@ -102,7 +116,7 @@ class NeuronPlatformerEnv(gym.Env):
             terminated = True
 
         if self.player.y > self.height + 120:
-            reward -= 50.0
+            reward -= 10.0   # mild: see the enemy-death comment above
             self.deaths += 1
             terminated = True
         truncated = self.steps >= 1400
@@ -147,6 +161,21 @@ class NeuronPlatformerEnv(gym.Env):
             else: vals += [0,0,0]
             if nearest_chip: vals += [(nearest_chip.x-self.player.x)/500, (nearest_chip.y-self.player.y)/300, 1.0]
             else: vals += [0,0,0]
+            # Terrain ahead. Without these the policy is blind to pits: a
+            # 500k-step PPO run collapsed to deterministic running and scored
+            # 0% on unseen seeds, because nothing in the observation says
+            # where the current platform ends or how wide the next gap is.
+            px = self.player.x
+            cur = nxt = None
+            for q in self._chain:
+                if q.x - 4 <= px <= q.x + q.w + 4: cur = q
+                elif q.x > px: nxt = q; break
+            edge = (cur.x + cur.w - px) / 400 if cur else 0.0
+            if nxt is not None:
+                start = cur.x + cur.w if cur else px
+                vals += [edge, (nxt.x - start) / 300, (nxt.y - self.player.bottom) / 250]
+            else:
+                vals += [edge, 0.0, 0.0]
             vals += [self.steps/1400, 1.0]
             return np.clip(np.array(vals, dtype=np.float32), -1, 1)
         # The agent trains on a deliberately clean frame (flat colours, no
