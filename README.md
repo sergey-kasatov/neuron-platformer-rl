@@ -212,6 +212,37 @@ task-relevant pixels: the platform edge and the gap ahead of a jump, the
 enemy when close, and the portal with its coin cluster in the final
 approach.
 
+## Training Results (v3 curriculum, roadmap v1.6)
+
+Continuing from the v2 weights, a difficulty curriculum walks demo ->
+medium -> hard with mixed env pools (16 envs on the new tier + 8 on the
+previous one), so earlier tiers keep being rehearsed while a harder one
+is learned:
+
+```bash
+python -m neuron_platformer_rl.agents.train_ppo_curriculum
+```
+
+9M steps, ~2.5 h on the same setup. Wider levels get bigger step budgets
+(easy/demo 1400, medium 2000, hard 2400): a hard level is up to 5440 px
+wide, and with run speed truncating to 4 px/step the flat 1400 budget
+could not even cross one.
+
+| Success rate (30 held-out seeds each) | v2 pixels | v3 curriculum |
+|---|---|---|
+| easy | 80% | 77% |
+| demo | 80% | **93%** |
+| medium | 33% | **57%** |
+| hard | 23% | **53%** |
+
+![Curriculum training curve](assets/curriculum_training_curve.png)
+
+The committed `models/ppo_neuron_platformer_v3_curriculum.zip` is the
+run's final model and also its best-on-eval hard snapshot; the table
+reproduces via `evaluate_agent --obs rgb --difficulty <tier>`. Easy
+slips by a single episode while every other tier climbs - the mixed
+pools kept old skills alive while new ones were learned.
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0
@@ -225,5 +256,5 @@ together with the pack's `License.txt`.
 - v1.3: human vs AI comparison mode
 - v1.4: RGB CNN PPO training - done (80% on unseen seeds + Grad-CAM)
 - v1.5: vision debug panel and detection-style overlays - done (policy monitor)
-- v1.6: curriculum to medium/hard difficulties
+- v1.6: curriculum to medium/hard - done (57% medium / 53% hard from raw pixels)
 - v2.0: portfolio dashboard

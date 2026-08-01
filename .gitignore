@@ -19,6 +19,7 @@ videos/
 models/*
 !models/ppo_neuron_platformer_v1_state.zip
 !models/ppo_neuron_platformer_v2_pixels.zip
+!models/ppo_neuron_platformer_v3_curriculum.zip
 
 # OS
 .DS_Store
