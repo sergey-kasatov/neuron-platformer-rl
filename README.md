@@ -30,12 +30,17 @@ action distribution and the value estimate behind every decision.
 - Fixed demo seed for public presentation
 - PPO training with Stable-Baselines3
 - State-vector observation for fast first training
-- RGB observation mode prepared for computer vision experiments
+- Pixel observation mode: the CNN agent trains on stacked clean 84x84
+  frames and beats the state-vector baseline (80% vs 50% on unseen seeds)
 - Dual renderer: Kenney sprite art for humans and replays, a clean
-  flat-colour frame for the agent's 84x84 observation
+  flat-colour frame drawn directly at 84x84 for the agent (the direct
+  low-res draw took the env from 129 to ~4,800 steps/s)
+- Grad-CAM saliency maps showing where the CNN looks before each action
 - Debug overlay with enemies, portal, reward, seed, and metrics
 - Live policy monitor: input features, hidden activations, action
   probabilities and V(s) rendered beside the game (roadmap v1.5)
+- Functional test suite: `scripts/smoke_test.py` (18 checks, no
+  dependencies) and the same checks as pytest cases in `tests/`
 
 ## Install
 
@@ -59,6 +64,13 @@ Controls:
 
 ```bash
 python test_env.py
+```
+
+Functional checks (physics, reward contract, enemies, both observation
+modes), headless:
+
+```bash
+python -m pytest
 ```
 
 ## Audit Level Solvability
@@ -98,6 +110,12 @@ python -m neuron_platformer_rl.agents.play_agent
 
 ```bash
 python -m neuron_platformer_rl.evaluation.evaluate_agent
+```
+
+Defaults evaluate the v1 state model. For the pixel model:
+
+```bash
+python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v2_pixels.zip --obs rgb
 ```
 
 ## Record a Demo GIF
@@ -140,6 +158,60 @@ interactive version of every curve is in tensorboard:
 tensorboard --logdir logs/tensorboard
 ```
 
+## Training Results (v2 pixel model, roadmap v1.4)
+
+The computer-vision phase: no hand-crafted features, the agent reads the
+game from pixels alone. PPO with a Nature-CNN policy on 4 stacked clean
+84x84 RGB frames (colour kept on purpose: entity classes are
+colour-coded), 10M steps across 24 parallel envs, RTX 3070 laptop GPU,
+about 3.5 hours:
+
+```bash
+python -m neuron_platformer_rl.agents.train_ppo_pixels
+```
+
+Every 250k steps the policy was evaluated on the same 30 held-out seeds
+as v1; the committed `models/ppo_neuron_platformer_v2_pixels.zip` is the
+best-on-eval snapshot, and its numbers reproduce exactly with the
+evaluation command above:
+
+| Metric (30 unseen seeds, deterministic) | v1 state | v2 pixels |
+|--------|-------|--------|
+| Success rate (reached the flag) | 50% | **80%** |
+| Average distance | 2434 px | 2943 px |
+| Average coins | 9.7 | 15.1 |
+
+![Pixel training curve](assets/pixel_training_curve.png)
+
+The pixel agent crosses the state-vector baseline around 3M steps and
+keeps climbing. Rewards in this figure are comparable to each other (one
+reward function throughout the run) but not to the v1 panels above.
+
+Two things made this run cheap. The observation renderer draws the flat
+frame directly at 84x84 instead of downscaling a full 960x540 frame
+(129 to ~4,800 env steps/s). And with an env step at ~0.2 ms, Windows
+subprocess vec-envs lost to a plain `DummyVecEnv`: pipe round trips cost
+more than the envs themselves (measured ~350 fps subproc x8 vs ~1,000
+fps dummy x24 end to end).
+
+## Where the CNN Looks (Grad-CAM)
+
+```bash
+python scripts/saliency_maps.py --model models/ppo_neuron_platformer_v2_pixels.zip --seed 10003
+```
+
+Gradients of the chosen action's logit weight the last conv layer's
+activations into an attention heatmap - the same technique as Grad-CAM
+on an image classifier, applied to a policy network:
+
+![Grad-CAM saliency maps](assets/saliency_maps.png)
+
+Columns: human-facing game frame, the actual 84x84 observation, and the
+Grad-CAM overlay. The trained network attends to exactly the
+task-relevant pixels: the platform edge and the gap ahead of a jump, the
+enemy when close, and the portal with its coin cluster in the final
+approach.
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0
@@ -151,6 +223,7 @@ together with the pack's `License.txt`.
 - v1.1: better metrics and CSV logging
 - v1.2: replay saving
 - v1.3: human vs AI comparison mode
-- v1.4: RGB CNN PPO training
-- v1.5: vision debug panel and detection-style overlays
+- v1.4: RGB CNN PPO training - done (80% on unseen seeds + Grad-CAM)
+- v1.5: vision debug panel and detection-style overlays - done (policy monitor)
+- v1.6: curriculum to medium/hard difficulties
 - v2.0: portfolio dashboard

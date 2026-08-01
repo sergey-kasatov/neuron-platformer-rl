@@ -12,12 +12,13 @@ venv/
 .ipynb_checkpoints/
 
 # Training output: logs and intermediate artifacts stay local.
-# The final v1 model is tracked so play_agent.py works from a fresh clone.
+# The final models are tracked so the repo works from a fresh clone.
 logs/
 replays/
 videos/
 models/*
 !models/ppo_neuron_platformer_v1_state.zip
+!models/ppo_neuron_platformer_v2_pixels.zip
 
 # OS
 .DS_Store
