@@ -9,6 +9,12 @@ from neuron_platformer_rl.utils.assets import load_assets
 
 ACTIONS = {0: "NOOP", 1: "LEFT", 2: "RIGHT", 3: "JUMP", 4: "RIGHT_JUMP", 5: "LEFT_JUMP"}
 
+# Episode step budget per difficulty. A hard level is up to 5440 px wide and
+# the run speed truncates to 4 px/step, so the flat 1400-step budget of the
+# easy phase cannot even cross the level; wider maps get more time. easy and
+# demo stay at exactly 1400 so all published v1/v2 numbers keep reproducing.
+TIME_BUDGET = {"easy": 1400, "demo": 1400, "medium": 2000, "hard": 2400}
+
 class NeuronPlatformerEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
 
@@ -33,6 +39,11 @@ class NeuronPlatformerEnv(gym.Env):
         self._font = None
         self.facing = 1
         self.reset()
+
+    def set_difficulty(self, difficulty: str):
+        """Curriculum hook: takes effect on the next reset. Reached through
+        vec_env.env_method, which forwards through the Monitor wrapper."""
+        self.difficulty = difficulty
 
     def reset(self, seed: int | None = None, options=None):
         super().reset(seed=seed)
@@ -119,7 +130,7 @@ class NeuronPlatformerEnv(gym.Env):
             reward -= 10.0   # mild: see the enemy-death comment above
             self.deaths += 1
             terminated = True
-        truncated = self.steps >= 1400
+        truncated = self.steps >= TIME_BUDGET.get(self.difficulty, 1400)
         self.episode_reward += reward
         return self._obs(), reward, terminated, truncated, self._info(action, reward)
 
@@ -176,7 +187,7 @@ class NeuronPlatformerEnv(gym.Env):
                 vals += [edge, (nxt.x - start) / 300, (nxt.y - self.player.bottom) / 250]
             else:
                 vals += [edge, 0.0, 0.0]
-            vals += [self.steps/1400, 1.0]
+            vals += [self.steps/TIME_BUDGET.get(self.difficulty, 1400), 1.0]
             return np.clip(np.array(vals, dtype=np.float32), -1, 1)
         # The agent trains on a deliberately clean frame (flat colours, no
         # parallax or animation): visual noise slows pixel-based RL without
