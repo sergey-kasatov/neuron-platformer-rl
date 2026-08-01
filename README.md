@@ -243,6 +243,15 @@ reproduces via `evaluate_agent --obs rgb --difficulty <tier>`. Easy
 slips by a single episode while every other tier climbs - the mixed
 pools kept old skills alive while new ones were learned.
 
+The pixel agent clearing a hard level it never saw, with its actual
+84x84 input and a live Grad-CAM beside the game:
+
+![Pixel agent on a hard unseen level with live Grad-CAM](assets/demo_pixel_agent.gif)
+
+```bash
+python scripts/record_pixel_agent_gif.py --difficulty hard --seed 10000
+```
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0
