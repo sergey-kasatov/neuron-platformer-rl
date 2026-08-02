@@ -83,21 +83,25 @@ if __name__ == "__main__":
         name_prefix="ppo_lstm",
     ))
 
-    peak_lr = params["learning_rate"]
     model = RecurrentPPO(
         "CnnLstmPolicy",
         env,
         verbose=1,
         device=device,
-        learning_rate=lambda progress: progress * peak_lr,   # linear decay
+        # Constant lr, the regime the study validated. The first 8M attempt
+        # decayed it linearly and died in a degenerate optimum by 2M.
+        learning_rate=params["learning_rate"],
         n_steps=params["n_steps"],
         batch_size=params["n_steps"] * N_ENVS // 8,
         n_epochs=params["n_epochs"],
         ent_coef=params["ent_coef"],
-        # Shared LSTM, matching the tuning study (separate critic LSTM
-        # nearly doubles recurrent compute on this hardware).
-        policy_kwargs=dict(lstm_hidden_size=params["lstm_hidden_size"],
-                           shared_lstm=True, enable_critic_lstm=False),
+        # sb3-contrib DEFAULT recurrence (separate critic LSTM), on purpose.
+        # The shared-LSTM speed hack used for the tuning study collapsed in
+        # the first full run: explained_variance ~0 at 2M (the critic never
+        # fit), approx_kl ~2e-4 and clip_fraction 0 (updates effectively
+        # dead), easy success decaying 6% -> 1%. Standard architecture is
+        # worth the ~30% throughput cost.
+        policy_kwargs=dict(lstm_hidden_size=params["lstm_hidden_size"]),
         tensorboard_log=str(LOG_DIR / "tensorboard"),
     )
     model.learn(total_timesteps=total_steps, callback=callbacks,
