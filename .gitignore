@@ -20,6 +20,7 @@ models/*
 !models/ppo_neuron_platformer_v1_state.zip
 !models/ppo_neuron_platformer_v2_pixels.zip
 !models/ppo_neuron_platformer_v3_curriculum.zip
+!models/ppo_neuron_platformer_v4_lstm.zip
 
 # OS
 .DS_Store

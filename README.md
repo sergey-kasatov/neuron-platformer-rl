@@ -118,6 +118,14 @@ Defaults evaluate the v1 state model. For the pixel model:
 python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v2_pixels.zip --obs rgb
 ```
 
+The v4 LSTM model needs `--recurrent`, which drops the frame stack and
+threads the hidden state through `predict`. Add `--device cpu` to keep
+the GPU free while something else is training:
+
+```bash
+python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v4_lstm.zip --obs rgb --recurrent
+```
+
 ## Record a Demo GIF
 
 ```bash
@@ -252,6 +260,66 @@ The pixel agent clearing a hard level it never saw, with its actual
 python scripts/record_pixel_agent_gif.py --difficulty hard --seed 10000
 ```
 
+## Training Results (v4 recurrence experiment, roadmap v1.7)
+
+v2 and v3 read velocity out of a stack of four frames. This run removes
+the stack and asks an LSTM to carry that context instead, so the policy
+sees exactly one 84x84 frame per step. Hyperparameters come from an
+Optuna study (median-pruned, sqlite-resumable):
+
+```bash
+python -m neuron_platformer_rl.agents.tune_lstm_optuna
+python -m neuron_platformer_rl.agents.train_ppo_lstm
+```
+
+LSTM weights cannot start from the CNN-only v2/v3, so this is 8M steps
+from scratch and the ladder opens one tier lower: easy -> demo at 2.5M ->
+medium + demo at 4M -> hard + medium at 6M, about 7 h. RecurrentPPO
+measures ~250 fps here against ~1,000 for plain PPO, so those 8M
+recurrent steps cost roughly the wall clock of v2's 10M reactive ones.
+The budgets differ by design and the table has to be read that way.
+
+| Success rate (30 held-out seeds each) | v2 pixels (10M, easy only) | v3 curriculum (19M cumulative) | v4 LSTM (8M from scratch) |
+|---|---|---|---|
+| easy | 80% | 77% | 70% |
+| demo | 80% | **93%** | 60% |
+| medium | 33% | **57%** | 37% |
+| hard | 23% | **53%** | 30% |
+
+![LSTM training curve](assets/lstm_training_curve.png)
+
+Recurrence does replace the frame stack: an LSTM on single raw frames
+learns this game, and on the two harder tiers it scores above the v2
+column (37 vs 33, 30 vs 23). That pair of numbers is not an architecture
+win, though - v2 only ever trained on easy, so its medium and hard
+figures are pure transfer, while v4 trained on those tiers directly. The
+like-for-like comparison is v4 against v3, both curricula ending on
+hard + medium, and there the recurrent agent reaches roughly 55 to 90
+percent of v3's per-tier scores on less than half the steps and with no
+warm start.
+
+The experiment did not find a ceiling. Both eval curves hit their maximum
+on the very last point and were still climbing when the budget ran out
+(medium 13 -> 17 -> 20 -> 23 -> 37 percent over the final 2M), so these
+are a floor for the architecture rather than its limit.
+
+One negative result worth recording: a shared actor-critic LSTM, used to
+buy throughput during tuning, collapsed in the first full run -
+explained variance around 0, approx_kl about 2e-4 and clip fraction 0, so
+the critic never fit and the updates were effectively dead. The
+sb3-contrib default separate critic LSTM costs roughly 30 percent
+throughput and trains normally (explained variance 0.85 to 0.95).
+
+The committed `models/ppo_neuron_platformer_v4_lstm.zip` is the
+best-on-eval hard snapshot at 8M, which also beats the final-step model
+on three tiers of four (70/60/37/30 against 67/63/30/20 - a deterministic
+30-episode evaluation is sensitive to one more gradient update). The
+table reproduces via:
+
+```bash
+python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v4_lstm.zip --obs rgb --recurrent --difficulty medium
+```
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0
@@ -266,4 +334,6 @@ together with the pack's `License.txt`.
 - v1.4: RGB CNN PPO training - done (80% on unseen seeds + Grad-CAM)
 - v1.5: vision debug panel and detection-style overlays - done (policy monitor)
 - v1.6: curriculum to medium/hard - done (57% medium / 53% hard from raw pixels)
+- v1.7: recurrence ceiling experiment - done (LSTM on single frames, 37% medium
+  / 30% hard on 8M from scratch, curve still rising at the budget end)
 - v2.0: portfolio dashboard
