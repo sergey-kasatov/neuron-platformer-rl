@@ -9,6 +9,7 @@ activations weight those activation maps into a coarse attention map.
 
 Run:  python scripts/saliency_maps.py [--model models/pixels_best/best_model.zip]
       [--seed 10000] [--difficulty easy] [--out assets/saliency_maps.png]
+      [--recurrent]   # v4 LSTM model
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ import matplotlib
 import numpy as np
 import torch
 from PIL import Image, ImageDraw
+from sb3_contrib import RecurrentPPO
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
@@ -31,20 +33,48 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCALE = 4          # obs panels are upscaled 84 -> 336 for readability
 
 
-def grad_cam(policy, obs_batch) -> tuple[np.ndarray, int, float]:
-    """Heatmap (84x84 in [0,1]), chosen action id and its probability."""
+def grad_cam(policy, obs_batch, state=None, episode_start=None) -> tuple[np.ndarray, int, float]:
+    """Heatmap (84x84 in [0,1]), chosen action id and its probability.
+
+    A recurrent policy (v4) needs its hidden state passed in: the action
+    logit then depends on the LSTM as well as on the frame, and the gradient
+    flows back through the LSTM into the same conv layer. Both branches stop
+    at the RAW action logits on purpose - Categorical would hand back
+    normalized log-probabilities, whose gradient is not the class score the
+    Grad-CAM recipe asks for.
+    """
     acts: dict[str, torch.Tensor] = {}
 
     def save_activation(module, inputs, output):
         output.retain_grad()   # non-leaf: .grad is only kept on request
         acts["a"] = output
 
-    conv = policy.features_extractor.cnn[4]   # last Conv2d of the Nature CNN
+    # Same object as features_extractor while the extractor is shared, which
+    # it is for both policies here; naming the actor's one keeps the
+    # recurrent path honest if that ever changes.
+    extractor = getattr(policy, "pi_features_extractor", policy.features_extractor)
+    conv = extractor.cnn[4]                   # last Conv2d of the Nature CNN
     hook = conv.register_forward_hook(save_activation)
     try:
         t, _ = policy.obs_to_tensor(obs_batch)
-        features = policy.extract_features(t)
-        latent_pi = policy.mlp_extractor.forward_actor(features)
+        # The branch follows the POLICY, not the caller's state: on the first
+        # step of an episode a recurrent policy has no state yet, and it starts
+        # from zeros exactly like sb3-contrib's own predict does.
+        if not hasattr(policy, "lstm_actor"):
+            features = policy.extract_features(t)
+            latent_pi = policy.mlp_extractor.forward_actor(features)
+        else:
+            if state is None:
+                zeros = np.zeros(policy.lstm_hidden_state_shape, dtype=np.float32)
+                state, episode_start = (zeros, zeros), np.ones((1,), dtype=bool)
+            lstm_state = tuple(torch.as_tensor(s, dtype=torch.float32,
+                                               device=policy.device) for s in state)
+            starts = torch.as_tensor(episode_start, dtype=torch.float32,
+                                     device=policy.device)
+            features = policy.extract_features(t, policy.pi_features_extractor)
+            latent_pi, _ = policy._process_sequence(features, lstm_state, starts,
+                                                    policy.lstm_actor)
+            latent_pi = policy.mlp_extractor.forward_actor(latent_pi)
         logits = policy.action_net(latent_pi)
         action = int(logits.argmax(dim=1))
         prob = float(torch.softmax(logits.detach(), dim=1)[0, action])
@@ -78,27 +108,36 @@ def main():
     ap.add_argument("--out", default=str(ROOT / "assets" / "saliency_maps.png"))
     ap.add_argument("--panels", type=int, default=6)
     ap.add_argument("--every", type=int, default=25, help="sample every Nth step")
+    ap.add_argument("--recurrent", action="store_true",
+                    help="v4 LSTM model: single frames, hidden state threaded")
     args = ap.parse_args()
 
-    model = PPO.load(args.model, device="cpu")   # gradients for one frame: CPU is enough
+    # Gradients for one frame: CPU is enough.
+    model = (RecurrentPPO if args.recurrent else PPO).load(args.model, device="cpu")
     make = lambda: NeuronPlatformerEnv(render_mode="rgb_array", difficulty=args.difficulty,
                                        seed=args.seed, observation_mode="rgb")
-    venv = VecFrameStack(DummyVecEnv([make]), 4)
+    venv = DummyVecEnv([make])
+    if not args.recurrent:
+        venv = VecFrameStack(venv, 4)          # the LSTM replaces the stack
     base_env = venv.unwrapped.envs[0]
 
     obs = venv.reset()
     samples = []
     done, steps = False, 0
+    state, episode_start = None, np.ones((1,), dtype=bool)
     while not done:
+        # predict runs every step even when nothing is sampled: for the
+        # recurrent policy it is what advances the hidden state.
+        act, next_state = model.predict(obs, state=state, episode_start=episode_start,
+                                        deterministic=True)
         if steps % args.every == 0:
-            cam, action, prob = grad_cam(model.policy, obs)
-            current = obs[0, :, :, -3:]        # newest frame of the stack
+            cam, action, prob = grad_cam(model.policy, obs, state, episode_start)
+            current = obs[0, :, :, -3:]        # newest frame of the stack, or the only one
             samples.append(dict(step=steps, human=base_env.render(), obs=current,
                                 cam=overlay(current, cam), action=action, prob=prob))
             act = np.array([action])
-        else:
-            act, _ = model.predict(obs, deterministic=True)
         obs, _, dones, infos = venv.step(act)
+        state, episode_start = next_state, np.zeros((1,), dtype=bool)
         done = bool(dones[0])
         steps += 1
     info = infos[0]

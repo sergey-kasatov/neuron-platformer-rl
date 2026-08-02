@@ -220,6 +220,11 @@ task-relevant pixels: the platform edge and the gap ahead of a jump, the
 enemy when close, and the portal with its coin cluster in the final
 approach.
 
+`--recurrent` runs the same analysis on the v4 LSTM policy. Its forward
+path differs - the action logit depends on the hidden state as well as on
+the frame - so the hidden state is threaded in and the gradient reaches
+the conv layer through the LSTM.
+
 ## Training Results (v3 curriculum, roadmap v1.6)
 
 Continuing from the v2 weights, a difficulty curriculum walks demo ->
@@ -309,6 +314,17 @@ explained variance around 0, approx_kl about 2e-4 and clip fraction 0, so
 the critic never fit and the updates were effectively dead. The
 sb3-contrib default separate critic LSTM costs roughly 30 percent
 throughput and trains normally (explained variance 0.85 to 0.95).
+
+The recurrent agent clearing a hard level it has never seen, on one frame
+of memory-free input at a time, with the Grad-CAM computed through the
+LSTM. It is one of the 9 hard seeds out of 30 that this model clears, and
+the widest of them at 5,956 px:
+
+![v4 LSTM agent clearing a hard unseen level](assets/demo_v4_lstm.gif)
+
+```bash
+python scripts/record_pixel_agent_gif.py --recurrent --model models/ppo_neuron_platformer_v4_lstm.zip --difficulty hard --seed 10027
+```
 
 The committed `models/ppo_neuron_platformer_v4_lstm.zip` is the
 best-on-eval hard snapshot at 8M, which also beats the final-step model
