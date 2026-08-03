@@ -291,22 +291,75 @@ The budgets differ by design and the table has to be read that way.
 | medium | 33% | **57%** | 37% |
 | hard | 23% | **53%** | 30% |
 
+The curve below covers the whole experiment, including the budget-doubling
+extension described in the next section, so it runs to 15.5M rather than 8M:
+
 ![LSTM training curve](assets/lstm_training_curve.png)
 
 Recurrence does replace the frame stack: an LSTM on single raw frames
-learns this game, and on the two harder tiers it scores above the v2
-column (37 vs 33, 30 vs 23). That pair of numbers is not an architecture
-win, though - v2 only ever trained on easy, so its medium and hard
-figures are pure transfer, while v4 trained on those tiers directly. The
-like-for-like comparison is v4 against v3, both curricula ending on
-hard + medium, and there the recurrent agent reaches roughly 55 to 90
-percent of v3's per-tier scores on less than half the steps and with no
-warm start.
+learns this game. It also scores above the v2 column on the two harder
+tiers (37 vs 33, 30 vs 23), but neither gap survives the noise analysis
+below, and v2 only ever trained on easy, so its medium and hard figures
+are pure transfer while v4 trained those tiers directly. The like-for-like
+comparison is v4 against v3, both curricula ending on hard + medium, and
+there the recurrent agent reaches roughly 55 to 90 percent of v3's
+per-tier scores on less than half the steps and with no warm start.
 
-The experiment did not find a ceiling. Both eval curves hit their maximum
-on the very last point and were still climbing when the budget ran out
-(medium 13 -> 17 -> 20 -> 23 -> 37 percent over the final 2M), so these
-are a floor for the architecture rather than its limit.
+### Doubling the budget: 8M to 16M steps
+
+The 8M run ended with both eval curves at their maximum, which looked like
+a trend that had not finished. It was not one. The run was resumed from its
+final save and trained to 16M inside the same hard + medium stage, so the
+two halves are directly comparable. Pooling the last four evaluations of
+each half gives 120 held-out episodes per cell:
+
+| pooled over 120 episodes | 6.5 to 8M | 14 to 15.5M | delta | z |
+|---|---|---|---|---|
+| medium success | 24.2% +/- 3.9 | 36.7% +/- 4.4 | +12.5 | 2.12 |
+| hard success | 12.5% +/- 3.0 | 25.8% +/- 4.0 | +13.3 | 2.66 |
+| medium reward | 161.9 | 191.3 | +29.4 | 1.96 |
+| hard reward | 156.1 | 205.3 | +49.2 | 2.97 |
+
+Four tests, so a Bonferroni correction asks for |z| > 2.50: hard clears it
+on both metrics, medium does not. Meanwhile the peak barely moved. Running
+the same held-out matrix on the 16M best-on-eval snapshot gives 36.7 percent
+medium (identical to 8M) and 33.3 percent hard (one more episode out of 30),
+so the extra budget bought typical performance rather than peak performance:
+the agent became reliably as good as it used to be on its best days, without
+getting better on its best days. The published table above stays the 8M
+snapshot, because the 16M one does not dominate it.
+
+It also cost something. The mixed env pools rehearse only the ADJACENT tier -
+the final stage runs hard x16 + medium x8 - so nothing has trained or
+rehearsed easy since 2.5M, and over those 8M extra steps easy decayed from
+70 to 50 percent (demo 60 to 57). That is the same mechanism the curriculum
+section credits for protecting demo, seen from the other side: mixed pools
+slow forgetting where they reach and do nothing where they do not.
+
+### What a 30-episode evaluation can and cannot tell you
+
+This is the most transferable result in the project, and it applies to every
+table above. A deterministic evaluation over 30 held-out seeds has a binomial
+standard error of about 7.3 points at a true success rate near 0.2, so its
+95 percent interval spans roughly plus or minus 14 points. The extension
+demonstrates it directly: with the training side flat, individual medium
+evaluations read anywhere from 6.7 to 43.3 percent and hard from 0.0 to
+33.3 percent.
+
+Two consequences:
+
+- The v4-vs-v2 gaps quoted above (37 vs 33 on medium, 30 vs 23 on hard) sit
+  well inside that interval. They are not evidence of anything.
+- Every published column is a best-on-eval snapshot, which is the top of a
+  noisy band rather than typical behaviour. That is true of v2 and v3 too, so
+  the columns are at least biased the same way, but any single one should be
+  read as an upper estimate.
+
+The tables themselves are exact and reproduce bit for bit, because a fixed
+model on fixed seeds is deterministic. What is noisy is reading one such
+number as the architecture's ability. The fix is more seeds: 200 held-out
+seeds would cut the standard error to 2.8 points, and re-measuring v2, v3
+and v4 together is the obvious next step.
 
 One negative result worth recording: a shared actor-critic LSTM, used to
 buy throughput during tuning, collapsed in the first full run -
@@ -351,5 +404,6 @@ together with the pack's `License.txt`.
 - v1.5: vision debug panel and detection-style overlays - done (policy monitor)
 - v1.6: curriculum to medium/hard - done (57% medium / 53% hard from raw pixels)
 - v1.7: recurrence ceiling experiment - done (LSTM on single frames, 37% medium
-  / 30% hard on 8M from scratch, curve still rising at the budget end)
+  / 30% hard on 8M from scratch; doubling the budget to 16M raised typical
+  performance but not the peak)
 - v2.0: portfolio dashboard

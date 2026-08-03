@@ -38,8 +38,10 @@ RUNS = {
         eval_dir="eval_lstm",
         out="lstm_training_curve.png",
         title="Recurrence (v4): CnnLstmPolicy on single frames, curriculum from scratch",
-        stages=[(0.0, "easy x24"), (2.5, "demo x24"), (4.0, "medium 16 + demo 8"),
-                (6.0, "hard 16 + medium 8")],
+        # Short labels: this run spans 16M, so the 4M and 6M marks sit close
+        # together and the full "medium 16 + demo 8" spelling collides.
+        stages=[(0.0, "easy"), (2.5, "demo"), (4.0, "medium+demo"),
+                (6.0, "hard+medium")],
     ),
 }
 
