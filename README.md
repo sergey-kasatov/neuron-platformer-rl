@@ -31,7 +31,8 @@ action distribution and the value estimate behind every decision.
 - PPO training with Stable-Baselines3
 - State-vector observation for fast first training
 - Pixel observation mode: the CNN agent trains on stacked clean 84x84
-  frames and beats the state-vector baseline (80% vs 50% on unseen seeds)
+  frames and beats the state-vector baseline (80% vs 27% success on 200
+  held-out seeds)
 - Dual renderer: Kenney sprite art for humans and replays, a clean
   flat-colour frame drawn directly at 84x84 for the agent (the direct
   low-res draw took the env from 129 to ~4,800 steps/s)
@@ -297,13 +298,15 @@ extension described in the next section, so it runs to 15.5M rather than 8M:
 ![LSTM training curve](assets/lstm_training_curve.png)
 
 Recurrence does replace the frame stack: an LSTM on single raw frames
-learns this game. It also scores above the v2 column on the two harder
-tiers (37 vs 33, 30 vs 23), but neither gap survives the noise analysis
-below, and v2 only ever trained on easy, so its medium and hard figures
-are pure transfer while v4 trained those tiers directly. The like-for-like
-comparison is v4 against v3, both curricula ending on hard + medium, and
-there the recurrent agent reaches roughly 55 to 90 percent of v3's
-per-tier scores on less than half the steps and with no warm start.
+learns this game. In this 30-seed snapshot it also scores above the v2
+column on the two harder tiers (37 vs 33, 30 vs 23), but the noise
+analysis below shows a 30-episode evaluation cannot support that claim,
+and the 200-seed re-measurement at the end of this README resolves it
+the other way: the frame stack beats the LSTM on every tier. The
+like-for-like comparison is v4 against v3, both curricula ending on
+hard + medium, and there the recurrent agent reaches roughly half of
+v3's medium and hard scores on less than half the steps and with no
+warm start.
 
 ### Doubling the budget: 8M to 16M steps
 
@@ -357,9 +360,48 @@ Two consequences:
 
 The tables themselves are exact and reproduce bit for bit, because a fixed
 model on fixed seeds is deterministic. What is noisy is reading one such
-number as the architecture's ability. The fix is more seeds: 200 held-out
-seeds would cut the standard error to 2.8 points, and re-measuring v2, v3
-and v4 together is the obvious next step.
+number as the architecture's ability. The fix is more seeds, and it has
+been applied - see the next section.
+
+### The definitive matrix: 200 held-out seeds
+
+All four committed models, re-measured on seeds 10000 to 10199 with the
+same public command at `--episodes 200`, which cuts the standard error to
+about 3 points per cell. This table supersedes the 30-seed columns above
+as the project's headline numbers; the older tables stay because they
+reproduce exactly and because the gap between them and this one is itself
+a result.
+
+| Success rate (200 held-out seeds, +/- one SE) | v1 state | v2 pixels | v3 curriculum | v4 LSTM |
+|---|---|---|---|---|
+| easy | 27.0% +/- 3.1 | **80.5% +/- 2.8** | 78.5% +/- 2.9 | 60.0% +/- 3.5 |
+| demo | - | 75.0% +/- 3.1 | **78.5% +/- 2.9** | 56.0% +/- 3.5 |
+| medium | - | 42.5% +/- 3.5 | **52.0% +/- 3.5** | 29.5% +/- 3.2 |
+| hard | - | 28.0% +/- 3.2 | **55.0% +/- 3.5** | 18.0% +/- 2.7 |
+
+What the wider measurement changes:
+
+- **The headline gap widens.** The state baseline's published 50% was the
+  luckiest reading in the project: on 200 seeds it is 27.0%, while the
+  pixel agent holds at 80.5%. Pixels beat the hand-crafted features by 53
+  points, not 30.
+- **The curriculum agent confirms.** v3 reads 78.5 / 78.5 / 52.0 / 55.0 -
+  hard is even a point above its 30-seed number. Only demo moves a lot
+  (93 to 78.5), which is the upper-estimate effect doing exactly what the
+  section above predicts.
+- **The v4 column drops the most, and for a reason worth naming**: the
+  committed v4 zip was selected as best-on-eval on these very hard-tier
+  seeds' first 30, so it carried the largest selection bias, and the
+  correction is correspondingly largest (hard 30 to 18). The open
+  question from the snapshot table - v4 vs v2 on medium and hard - is now
+  resolved, against v4: 29.5 vs 42.5 (z = 2.7) and 18.0 vs 28.0
+  (z = 2.4). On this task the 4-frame stack beats the single-frame LSTM
+  on every tier, full stop.
+
+Probabilistic held-out note, checked rather than assumed: training draws
+level seeds uniformly from 1 to 10,000,000 per reset, so across a 16M-step
+run the expected number of the 200 evaluation seeds ever seen in training
+is about 0.5, and the held-out claim holds at this size too.
 
 One negative result worth recording: a shared actor-critic LSTM, used to
 buy throughput during tuning, collapsed in the first full run -
@@ -403,7 +445,8 @@ together with the pack's `License.txt`.
 - v1.4: RGB CNN PPO training - done (80% on unseen seeds + Grad-CAM)
 - v1.5: vision debug panel and detection-style overlays - done (policy monitor)
 - v1.6: curriculum to medium/hard - done (57% medium / 53% hard from raw pixels)
-- v1.7: recurrence ceiling experiment - done (LSTM on single frames, 37% medium
-  / 30% hard on 8M from scratch; doubling the budget to 16M raised typical
-  performance but not the peak)
+- v1.7: recurrence ceiling experiment - done (LSTM on single frames, 8M from
+  scratch; doubling the budget to 16M raised typical performance but not the
+  peak, and the 200-seed re-measurement puts it behind the frame stack on
+  every tier)
 - v2.0: portfolio dashboard
