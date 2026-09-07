@@ -31,8 +31,9 @@ action distribution and the value estimate behind every decision.
 - PPO training with Stable-Baselines3
 - State-vector observation for fast first training
 - Pixel observation mode: the CNN agent trains on stacked clean 84x84
-  frames and beats the state-vector baseline (80% vs 27% success on 200
-  held-out seeds)
+  frames and beats the state-vector baseline at equal training budget
+  (80.5% vs 64.0% success on 200 held-out seeds; the originally published
+  27% was the baseline at one fifth of the budget, see the control run)
 - Dual renderer: Kenney sprite art for humans and replays, a clean
   flat-colour frame drawn directly at 84x84 for the agent (the direct
   low-res draw took the env from 129 to ~4,800 steps/s)
@@ -372,19 +373,21 @@ as the project's headline numbers; the older tables stay because they
 reproduce exactly and because the gap between them and this one is itself
 a result.
 
-| Success rate (200 held-out seeds, +/- one SE) | v1 state | v2 pixels | v3 curriculum | v4 LSTM |
-|---|---|---|---|---|
-| easy | 27.0% +/- 3.1 | **80.5% +/- 2.8** | 78.5% +/- 2.9 | 60.0% +/- 3.5 |
-| demo | - | 75.0% +/- 3.1 | **78.5% +/- 2.9** | 56.0% +/- 3.5 |
-| medium | - | 42.5% +/- 3.5 | **52.0% +/- 3.5** | 29.5% +/- 3.2 |
-| hard | - | 28.0% +/- 3.2 | **55.0% +/- 3.5** | 18.0% +/- 2.7 |
+| Success rate (200 held-out seeds, +/- one SE) | v1 state (2M) | v1 state (10M, control) | v2 pixels | v3 curriculum | v4 LSTM |
+|---|---|---|---|---|---|
+| easy | 27.0% +/- 3.1 | 64.0% +/- 3.4 | **80.5% +/- 2.8** | 78.5% +/- 2.9 | 60.0% +/- 3.5 |
+| demo | - | - | 75.0% +/- 3.1 | **78.5% +/- 2.9** | 56.0% +/- 3.5 |
+| medium | - | - | 42.5% +/- 3.5 | **52.0% +/- 3.5** | 29.5% +/- 3.2 |
+| hard | - | - | 28.0% +/- 3.2 | **55.0% +/- 3.5** | 18.0% +/- 2.7 |
 
 What the wider measurement changes:
 
 - **The headline gap widens.** The state baseline's published 50% was the
   luckiest reading in the project: on 200 seeds it is 27.0%, while the
   pixel agent holds at 80.5%. Pixels beat the hand-crafted features by 53
-  points, not 30.
+  points, not 30. **Superseded on 2026-09-07 by the control run below:**
+  the 2M baseline was also under-trained, and at the pixel agent's own
+  budget the gap is 16.5 points, not 53.
 - **The curriculum agent confirms.** v3 reads 78.5 / 78.5 / 52.0 / 55.0 -
   hard is even a point above its 30-seed number. Only demo moves a lot
   (93 to 78.5), which is the upper-estimate effect doing exactly what the
@@ -431,6 +434,58 @@ table reproduces via:
 python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v4_lstm.zip --obs rgb --recurrent --difficulty medium
 ```
 
+## Control Run: the State Baseline at the Pixel Budget (2026-09-07)
+
+The headline comparison above was not budget-controlled: v1 trained for 2M
+steps (8 envs, CPU, about 30 minutes) and v2 for 10M (24 envs, GPU, about
+3.5 hours), so "pixels beat hand-crafted features" was confounded with a
+fivefold difference in experience. This run re-trains the v1 configuration
+unchanged (MlpPolicy, 8 envs, the same PPO hyperparameters, CPU) for 10M
+steps, with what v2 already had: an evaluation on the same 30 held-out seeds
+every 250k steps, a best-on-eval snapshot, and 1M checkpoints.
+
+```bash
+python -m neuron_platformer_rl.agents.train_ppo_state_control --steps 10000000
+# interrupted? continue from a checkpoint; --steps then counts additional steps
+python -m neuron_platformer_rl.agents.train_ppo_state_control --resume logs/checkpoints_state_control/ppo_state_7000000_steps.zip --steps 3000000 --tag state_control_r2
+```
+
+The run was in fact interrupted once, by a reboot at 7.06M steps, and
+resumed from the 7M checkpoint; the curve below stitches the two segments.
+
+![State baseline at 10M: evaluation curve](assets/state_control_curve.png)
+
+| Success rate, easy, 200 held-out seeds (+/- one SE) | |
+|---|---|
+| v1 state, 2M, final model (as published) | 27.0% +/- 3.1 |
+| **v1 state, 10M, best-on-eval snapshot (taken at 3M)** | **64.0% +/- 3.4** |
+| v1 state, 10M, final model | 58.5% +/- 3.5 |
+| v2 pixels, 10M, best-on-eval snapshot | 80.5% +/- 2.8 |
+
+```bash
+python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v1_state_10M.zip --episodes 200
+python -m neuron_platformer_rl.evaluation.evaluate_agent --model models/ppo_neuron_platformer_v1_state_10M_final.zip --episodes 200
+```
+
+What the control changes:
+
+- **Most of the published gap was training budget.** At equal budget the
+  state agent reaches 64.0% on 200 held-out seeds against the pixel agent's
+  80.5%: a gap of 16.5 points, not 53.5. The 27.0% the headline rested on
+  was an under-trained model.
+- **Pixels still win, and the margin is outside the noise** (z = 3.75 on
+  200 seeds each). The information the 19-feature vector leaves out (only
+  the nearest gap, nothing behind it) is a real limit, just a smaller one.
+- **The state agent plateaus early.** On the 30-seed curve it passes the
+  published 50% around 2M, peaks at 66.7% at 3M and then oscillates between
+  40% and 67% through 10M with no trend, so the extra budget buys nothing
+  after about 2.5M; the published 2M model was both under-trained and an
+  unlucky final snapshot.
+- **The selection effect shows up a third time.** The best-on-eval snapshot
+  chosen on 30 seeds reads 64.0% on 200, the final model 58.5%, and the
+  intermediate checkpoints scatter across the same band. As with v4, one
+  30-episode reading is the top of a noisy band, not the model's ability.
+
 ## Assets
 
 Sprites are from the Kenney "New Platformer Pack" (https://kenney.nl), CC0
@@ -449,4 +504,7 @@ together with the pack's `License.txt`.
   scratch; doubling the budget to 16M raised typical performance but not the
   peak, and the 200-seed re-measurement puts it behind the frame stack on
   every tier)
+- v1.8: budget control for the v1-vs-v2 claim - done (the state baseline at
+  the pixel agent's 10M reaches 64% on 200 seeds; the gap shrinks from 53 to
+  16.5 points and pixels still win)
 - v2.0: portfolio dashboard

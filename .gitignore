@@ -25,3 +25,5 @@ models/*
 # OS
 .DS_Store
 Thumbs.db
+!models/ppo_neuron_platformer_v1_state_10M.zip
+!models/ppo_neuron_platformer_v1_state_10M_final.zip

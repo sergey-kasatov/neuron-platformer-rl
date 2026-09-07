@@ -58,6 +58,8 @@ if __name__ == "__main__":
     ap.add_argument("--steps", type=int, default=10_000_000)
     ap.add_argument("--eval-every", type=int, default=250_000)
     ap.add_argument("--tag", default="state_control")
+    ap.add_argument("--resume", default=None,
+                    help="checkpoint zip to continue from; --steps then counts additional steps")
     args = ap.parse_args()
     keep_windows_awake()
 
@@ -82,20 +84,29 @@ if __name__ == "__main__":
     # Hyperparameters copied verbatim from train_ppo.py. Device pinned to CPU:
     # that is where v1 trained (the venv had no CUDA torch yet), an MLP on 8
     # envs gains nothing from the GPU, and the GPU stays free.
-    model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        device="cpu",
-        learning_rate=2.5e-4,
-        n_steps=2048,
-        batch_size=64,
-        gamma=0.99,
-        ent_coef=0.01,
-        tensorboard_log=str(LOG_DIR / "tensorboard"),
-    )
+    if args.resume:
+        # Continue an interrupted run from a CheckpointCallback zip: the saved
+        # hyperparameters and optimizer state come back with the model, the
+        # constant learning rate carries no schedule to reset, and the step
+        # counter continues, so --steps means "this many more".
+        model = PPO.load(args.resume, env=env, device="cpu",
+                         tensorboard_log=str(LOG_DIR / "tensorboard"))
+        print(f"resumed from {args.resume} at {model.num_timesteps:,} steps")
+    else:
+        model = PPO(
+            "MlpPolicy",
+            env,
+            verbose=1,
+            device="cpu",
+            learning_rate=2.5e-4,
+            n_steps=2048,
+            batch_size=64,
+            gamma=0.99,
+            ent_coef=0.01,
+            tensorboard_log=str(LOG_DIR / "tensorboard"),
+        )
     model.learn(total_timesteps=args.steps, callback=[eval_cb, ckpt_cb],
-                tb_log_name=f"PPO_{args.tag}")
+                tb_log_name=f"PPO_{args.tag}", reset_num_timesteps=args.resume is None)
     model.save(MODEL_DIR / f"ppo_neuron_platformer_{args.tag}_final")
     print("Saved last model to:", MODEL_DIR / f"ppo_neuron_platformer_{args.tag}_final.zip")
     print("Best-on-eval model in:", MODEL_DIR / f"{args.tag}_best")
